@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zoo Explorer VR 3D</title>
+
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#071b12}
+#hud{
+ position:fixed;z-index:20;right:14px;top:14px;width:285px;
+ color:#fff;background:rgba(5,20,18,.78);backdrop-filter:blur(12px);
+ border:1px solid rgba(255,255,255,.2);border-radius:18px;
+ padding:15px;box-shadow:0 12px 35px #0008
+}
+#hud h1{font-size:20px;margin:0 0 10px;color:#ffe66d}
+.stat{display:flex;justify-content:space-between;margin:5px 0}
+.bar{height:6px;background:#ffffff22;border-radius:5px;overflow:hidden;margin:4px 0 10px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#00e5ff,#7cff6b);width:0}
+label{font-size:12px;color:#ddd}
+input[type=range]{width:100%}
+button{
+ border:0;border-radius:10px;padding:9px 8px;margin:3px;
+ color:white;background:#157a5d;font-weight:bold;cursor:pointer
+}
+button:hover{background:#20a878}
+button:active{transform:scale(.96)}
+.grid{display:grid;grid-template-columns:1fr 1fr}
+#prompt{
+ position:fixed;z-index:25;left:50%;bottom:38px;transform:translateX(-50%);
+ background:#071b12dd;color:white;padding:12px 22px;border-radius:30px;
+ font-weight:bold;display:none;border:1px solid #fff4
+}
+#toast{
+ position:fixed;z-index:30;left:50%;top:16%;transform:translateX(-50%);
+ background:linear-gradient(135deg,#00a878,#0878c9);color:#fff;
+ padding:15px 25px;border-radius:18px;display:none;
+ font-size:18px;font-weight:bold;box-shadow:0 8px 30px #0008;text-align:center
+}
+#crosshair{
+ position:fixed;z-index:22;left:50%;top:50%;width:18px;height:18px;
+ transform:translate(-50%,-50%);pointer-events:none
+}
+#crosshair:before,#crosshair:after{content:"";position:absolute;background:#fff;box-shadow:0 0 4px #000}
+#crosshair:before{width:18px;height:2px;top:8px}
+#crosshair:after{width:2px;height:18px;left:8px}
+#photoFrame{
+ position:fixed;z-index:24;inset:12% 18%;border:4px solid #fff8;
+ display:none;pointer-events:none;border-radius:12px;box-shadow:0 0 80px #fff4 inset
+}
+#flash{position:fixed;z-index:100;inset:0;background:#fff;display:none}
+#mission{
+ position:fixed;z-index:19;left:14px;top:14px;width:280px;
+ background:#061a15cc;color:#fff;border-radius:16px;padding:13px;
+ backdrop-filter:blur(8px);font-size:12px
+}
+#mission h2{margin:0 0 7px;color:#ffd95a;font-size:17px}
+.mi{padding:3px 0}.done{color:#70ff91;text-decoration:line-through}
+#help{
+ position:fixed;z-index:18;bottom:12px;left:12px;color:#fff;
+ background:#0008;border-radius:12px;padding:9px;font-size:11px
+}
+.night #hud{background:#081226dd}
+@media(max-width:800px){
+ #hud{width:220px;font-size:12px}
+ #mission{width:210px;top:auto;bottom:50px}
+}
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+ <h1>🦁 ZOO EXPLORER</h1>
+ <div class="stat"><span>⭐ SCORE</span><b id="score">0</b></div>
+ <div class="stat"><span>🐾 ANIMALS</span><b id="animals">0/8</b></div>
+ <div class="stat"><span>🎯 MISSIONS</span><b id="missions">0/10</b></div>
+
+ <div class="bar"><i id="scoreBar"></i></div>
+
+ <label>Visitor Speed: <b id="vs">2.2</b></label>
+ <input id="visitorSpeed" type="range" min="0" max="5" step=".1" value="2.2">
+
+ <label>Animal Speed: <b id="as">1.0</b></label>
+ <input id="animalSpeed" type="range" min="0" max="3" step=".1" value="1">
+
+ <div class="grid">
+  <button id="feedBtn">🍎 FEED</button>
+  <button id="photoBtn">📷 PHOTO</button>
+  <button id="soundBtn">🔊 SOUND</button>
+  <button id="nightBtn">🌙 NIGHT</button>
+  <button id="lightsBtn">💡 LIGHTS</button>
+  <button id="staffBtn">🚨 STAFF</button>
+  <button id="pauseBtn">⏯ PAUSE</button>
+  <button id="resetBtn">🔄 RESET</button>
+  <button id="stopPeople">STOP PEOPLE</button>
+  <button id="resumePeople">RESUME PEOPLE</button>
+  <button onclick="document.documentElement.requestFullscreen()">⛶ FULLSCREEN</button>
+ </div>
+</div>
+
+<div id="mission">
+ <h2>🎯 MISSIONS</h2>
+ <div id="missionList"></div>
+</div>
+
+<div id="crosshair"></div>
+<div id="prompt"></div>
+<div id="toast"></div>
+<div id="photoFrame"></div>
+<div id="flash"></div>
+
+<div id="help">
+ WASD เดิน · Mouse มอง · Shift วิ่ง · Space กระโดด · E สำรวจ ·
+ M เสียง · P Pause · R Reset
+</div>
+
+<a-scene
+ id="scene"
+ renderer="antialias:true;colorManagement:true;shadowMapEnabled:true"
+ fog="type:exponential;color:#b9e5d0;density:.012"
+ background="color:#8fd8ff">
+
+ <a-assets timeout="5000">
+   <!-- วางภาพที่แนบมาไว้ชื่อ reference.png ข้าง index.html -->
+   <img id="referenceImg" src="reference.png">
+ </a-assets>
+
+ <a-sky id="sky" color="#8fd8ff"></a-sky>
+
+ <a-entity light="type:ambient;color:#fff;intensity:1.4"></a-entity>
+ <a-entity id="sun" light="type:directional;color:#fff5d0;intensity:2.2;castShadow:true"
+           position="-30 40 20"></a-entity>
+
+ <a-entity id="player" position="0 1.7 18" zoo-player>
+   <a-camera id="camera" look-controls="pointerLockEnabled:true"
+             wasd-controls-enabled="false" fov="75"></a-camera>
+ </a-entity>
+
+ <a-entity id="world"></a-entity>
+</a-scene>
+
+<script>
+(() => {
+"use strict";
+
+/* =========================
+   GAME STATE
+========================= */
+const state={
+ score:0,
+ discovered:new Set(),
+ photographed:new Set(),
+ fed:false,
+ zones:new Set(),
+ staff:false,
+ paused:false,
+ sound:true,
+ night:false,
+ lights:true,
+ animalSpeed:1,
+ visitorSpeed:2.2,
+ peopleMoving:true,
+ photoCount:0,
+ feedCooldown:0,
+ jumping:false
+};
+
+const animalData=[
+ ["Lion","🦁","#c98928",-55,2,-28,"Savanna"],
+ ["Elephant","🐘","#777c78",-25,2,-48,"Elephant Valley"],
+ ["Giraffe","🦒","#e6a72c",12,3,-46,"Giraffe Plains"],
+ ["Zebra","🦓","#eaeaea",47,2,-38,"Zebra Field"],
+ ["Monkey","🐒","#9a5b30",-52,2,12,"Monkey Island"],
+ ["Crocodile","🐊","#377a4b",-5,1,20,"Wetlands"],
+ ["Panda","🐼","#eeeeee",43,2,14,"Bamboo Garden"],
+ ["Bird","🦜","#38b7dd",0,5,-15,"Aviary"]
+];
+
+const missions=[
+ "พบ Lion",
+ "พบ Elephant",
+ "พบ Giraffe",
+ "พบ Zebra",
+ "พบ Monkey",
+ "พบสัตว์ครบ 8 ชนิด",
+ "ถ่ายรูปสัตว์ 3 ครั้ง",
+ "ให้อาหารสัตว์ 1 ครั้ง",
+ "สำรวจอย่างน้อย 3 โซน",
+ "เรียกเจ้าหน้าที่"
+];
+
+const world=document.querySelector("#world");
+const player=document.querySelector("#player");
+const camera=document.querySelector("#camera");
+const prompt=document.querySelector("#prompt");
+const toast=document.querySelector("#toast");
+const scene=document.querySelector("#scene");
+
+function toastMsg(msg,ms=2200){
+ toast.innerHTML=msg;
+ toast.style.display="block";
+ clearTimeout(toast._t);
+ toast._t=setTimeout(()=>toast.style.display="none",ms);
+}
+
+function score(n){
+ state.score+=n;
+ document.querySelector("#score").textContent=state.score;
+ document.querySelector("#scoreBar").style.width=Math.min(100,state.score/5)+"%";
+}
+
+function soundBeep(freq=500,dur=.08){
+ if(!state.sound)return;
+ try{
+  const ac=soundBeep.ac||(soundBeep.ac=new AudioContext());
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.frequency.value=freq;o.type="sine";
+  g.gain.value=.04;
+  o.connect(g);g.connect(ac.destination);
+  o.start();o.stop(ac.currentTime+dur);
+ }catch(e){}
+}
+
+/* =========================
+   PRIMITIVE HELPERS
+========================= */
+function ent(tag="a-entity",attrs={}){
+ const e=document.createElement(tag);
+ Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));
+ world.appendChild(e);
+ return e;
+}
+
+function box(x,y,z,sx,sy,sz,color,extra=""){
+ return ent("a-box",{
+  position:`${x} ${y} ${z}`,scale:`${sx} ${sy} ${sz}`,
+  material:`color:${color};roughness:.8`,
+  shadow:"cast:true;receive:true",...extra?{animation:extra}:{}
+ });
+}
+
+function cyl(x,y,z,r,h,color){
+ return ent("a-cylinder",{
+  position:`${x} ${y} ${z}`,radius:r,height:h,
+  material:`color:${color};roughness:.8`,
+  shadow:"cast:true;receive:true"
+ });
+}
+
+function text(x,y,z,value,color="#fff",scale="4 4 4",rot="0 0 0"){
+ return ent("a-text",{
+  position:`${x} ${y} ${z}`,value, color,
+  align:"center",scale,rotation:rot,
+  side:"double"
+ });
+}
+
+function tree(x,z,s=1){
+ const e=document.createElement("a-entity");
+ e.setAttribute("position",`${x} 0 ${z}`);
+ const trunk=document.createElement("a-cylinder");
+ trunk.setAttribute("position","0 2 0");
+ trunk.setAttribute("radius",.45*s);
+ trunk.setAttribute("height",4*s);
+ trunk.setAttribute("color","#70451f");
+ e.appendChild(trunk);
+
+ for(let i=0;i<3;i++){
+  const c=document.createElement("a-sphere");
+  c.setAttribute("position",`${(i-1)*.8*s} ${4.1+(i%2)*.8*s} ${(i%2-.5)*.5*s`);
+  c.setAttribute("scale",`${1.7*s} ${1.35*s} ${1.7*s}`);
+  c.setAttribute("color",i===1?"#2ca85c":"#42bd5e");
+  c.setAttribute("animation",
+   `property:rotation;to:0 ${i%2?8:-8} 0;dir:alternate;dur:${1800+i*500};loop:true`);
+  e.appendChild(c);
+ }
+ world.appendChild(e);
+}
+
+function lamp(x,z){
+ const pole=cyl(x,2.2,z,.08,4,"#252525");
+ const light=ent("a-sphere",{
+  position:`${x} 4.3 ${z}`,radius:.25,
+  material:"color:#ffeaa2;emissive:#ffe47a;emissiveIntensity:.8"
+ });
+ light.classList.add("zooLight");
+ const l=document.createElement("a-light");
+ l.setAttribute("type","point");
+ l.setAttribute("position",`${x} 4.1 ${z}`);
+ l.setAttribute("color","#ffd98a");
+ l.setAttribute("intensity","0");
+ l.setAttribute("distance","8");
+ l.classList.add("zooLight");
+ world.appendChild(l);
+}
+
+function fence(x,z,w,d){
+ const color="#725333";
+ box(x,1,z,w,2,.15,color);
+ box(x,1,z+w*.5,.15,2,d,color);
+ box(x,1,z-w*.5,.15,2,d,color);
+}
+
+/* =========================
+   GROUND / ROADS
+========================= */
+box(0,-.35,0,150,.5,120,"#62a85d");
+
+box(0,-.05,0,12,.12,120,"#d8b66a");
+box(0,-.04,0,150,.1,9,"#d8b66a");
+
+for(let z=-52;z<=52;z+=8) tree(-72,z,1.1);
+for(let z=-52;z<=52;z+=9) tree(72,z,1);
+for(let x=-65;x<=65;x+=11) tree(x,-57,1);
+for(let x=-60;x<=60;x+=12) tree(x,55,1.05);
+
+for(let z=-50;z<=50;z+=12){lamp(-7,z);lamp(7,z)}
+
+for(let i=0;i<30;i++){
+ const x=(Math.random()*120)-60;
+ const z=(Math.random()*105)-52;
+ if(Math.abs(x)<12 || Math.abs(z-18)<6) continue;
+ tree(x,z,.55+Math.random()*.5);
+}
+
+/* =========================
+   ENTRANCE LANDMARK
+========================= */
+box(0,4,57,30,8,1.2,"#167a55");
+text(0,6,56.2,"🌿 WELCOME TO\nZOO EXPLORER","#fff","7 7 7");
+
+box(0,1.8,55,20,3.5,.25,"#d6a839");
+
+const ref=ent("a-plane",{
+ position:"0 4.5 54.5",
+ width:"12",height:"5",
+ rotation:"0 180 0",
+ material:"src:#referenceImg;shader:flat"
+});
+text(0,1.0,54,"REFERENCE / WELCOME PHOTO","#fff","3 3 3");
+
+/* =========================
+   ZONE SIGNS
+========================= */
+const signs=[
+ [-55,-22,"🦁 SAVANNA"],
+ [-25,-42,"🐘 ELEPHANT VALLEY"],
+ [12,-40,"🦒 GIRAFFE PLAINS"],
+ [47,-32,"🦓 ZEBRA FIELD"],
+ [-52,8,"🐒 MONKEY ISLAND"],
+ [-5,16,"🐊 WETLANDS"],
+ [43,10,"🐼 BAMBOO GARDEN"],
+ [0,-10,"🦜 AVIARY"]
+];
+
+signs.forEach(([x,z,t])=>{
+ box(x,2,z,.15,4,.15,"#6b4428");
+ box(x,3.5,z,9,2,.3,"#166f55");
+ text(x,3.5,z-.2,t,"#fff","3.2 3.2 3.2","0 180 0");
+});
+
+/* =========================
+   WATERFALL / POND
+========================= */
+box(25,.05,25,22,.12,14,"#3db8dc");
+box(25,5,31,12,10,.5,"#6e765d");
+
+for(let i=0;i<12;i++){
+ const w=box(20+i*.9,4.6,30.2,.35,8,.15,"#8deaff");
+ w.setAttribute("animation",
+  `property:position;to:${20+i*.9} .3 30.2;dur:${900+i*80};loop:true;easing:easeInCubic`);
+}
+
+text(25,2,17,"💧 WATERFALL & POND","#dffaff","3 3 3");
+
+/* =========================
+   ANIMAL MODEL CREATOR
+========================= */
+function createAnimal(data,index){
+ const [name,emoji,color,x,y,z,zone]=data;
+ const root=document.createElement("a-entity");
+ root.setAttribute("position",`${x} ${y-.8} ${z}`);
+ root.setAttribute("class","animal");
+ root.dataset.name=name;
+ root.dataset.zone=zone;
+ root.dataset.baseY=y-.8;
+ root.dataset.homeX=x;
+ root.dataset.homeZ=z;
+ root.dataset.vx=(Math.random()>.5?1:-1);
+ root.dataset.vz=(Math.random()>.5?1:-1);
+ root.dataset.turn=String(Math.random()*3);
+ root.dataset.state="wander";
+
+ const body=document.createElement("a-sphere");
+ body.setAttribute("scale",name==="Giraffe"?"1.2 1.7 .8":"1.6 1 .9");
+ body.setAttribute("color",color);
+ body.setAttribute("shadow","cast:true;receive:true");
+ root.appendChild(body);
+
+ const head=document.createElement("a-sphere");
+ head.setAttribute("position","0 1.15 -.65");
+ head.setAttribute("scale",".65 .65 .65");
+ head.setAttribute("color",color);
+ root.appendChild(head);
+
+ if(name==="Elephant"){
+  const trunk=document.createElement("a-cylinder");
+  trunk.setAttribute("position","0 .8 -1.05");
+  trunk.setAttribute("radius",".18");trunk.setAttribute("height","1.3");
+  trunk.setAttribute("rotation","-35 0 0");
+  trunk.setAttribute("color","#777c78");root.appendChild(trunk);
+ }
+ if(name==="Giraffe"){
+  body.setAttribute("scale",".9 2.5 .7");
+  const neck=document.createElement("a-cylinder");
+  neck.setAttribute("position","0 2.3 -.25");
+  neck.setAttribute("radius",".35");neck.setAttribute("height","3");
+  neck.setAttribute("color",color);root.appendChild(neck);
+ }
+ if(name==="Crocodile"){
+  body.setAttribute("scale","2 .55 .65");
+ }
+ if(name==="Bird"){
+  body.setAttribute("scale",".8 .8 1");
+  root.setAttribute("position",`${x} ${y+2} ${z}`);
+  root.dataset.baseY=y+2;
+ }
+
+ const eye1=document.createElement("a-sphere");
+ eye1.setAttribute("position","-.22 1.3 -1.12");
+ eye1.setAttribute("radius",".07");eye1.setAttribute("color","#111");
+ root.appendChild(eye1);
+ const eye2=eye1.cloneNode();
+ eye2.setAttribute("position",".22 1.3 -1.12");
+ root.appendChild(eye2);
+
+ const label=document.createElement("a-text");
+ label.setAttribute("value",`${emoji} ${name}`);
+ label.setAttribute("position","0 2.8 0");
+ label.setAttribute("align","center");
+ label.setAttribute("color","#fff");
+ label.setAttribute("scale","1.5 1.5 1.5");
+ root.appendChild(label);
+
+ /* enclosure */
+ const minX=x-9,maxX=x+9,minZ=z-7,maxZ=z+7;
+ for(let xx=minX;xx<=maxX;xx+=3){
+   fencePost(xx,minZ);fencePost(xx,maxZ);
+ }
+ for(let zz=minZ;zz<=maxZ;zz+=3){
+   fencePost(minX,zz);fencePost(maxX,zz);
+ }
+
+ root.addEventListener("click",()=>interact(root));
+ world.appendChild(root);
+ return root;
+}
+
+function fencePost(x,z){
+ cyl(x,1,z,.06,2.1,"#63482d");
+}
+
+/* zones with different colored floors */
+animalData.forEach((d,i)=>{
+ const [name,emoji,color,x,y,z,zone]=d;
+ const floor=box(x,-.08,z,20,.1,16,
+  ["#a4c96d","#91b8cf","#d5c171","#dedede","#72bd68","#559ac1","#c8e39a","#80b6cf"][i]);
+ floor.setAttribute("material",`color:${["#a4c96d","#91b8cf","#d5c171","#dedede","#72bd68","#559ac1","#c8e39a","#80b6cf"][i]};roughness:1`);
+ createAnimal(d,i);
+});
+
+/* =========================
+   BENCHES / FEEDING / PHOTO
+========================= */
+function bench(x,z,rot=0){
+ box(x,.8,z,3,.2,.5,"#8b542d");
+ box(x,.4,z,2.7,.7,.15,"#70401f");
+}
+bench(-15,25);bench(15,30);bench(55,5);bench(-35,-5);
+
+function kiosk(x,z,title,color){
+ box(x,2,z,7,4,.5,color);
+ text(x,3,z-.3,title,"#fff","2.3 2.3 2.3","0 180 0");
+}
+kiosk(-28,28,"🍎 FEEDING POINT","#c46a32");
+kiosk(30,29,"📷 PHOTO SPOT","#7c4db0");
+kiosk(58,30,"ℹ INFO","#2570a8");
+
+/* =========================
+   NPC VISITORS
+========================= */
+const people=[];
+for(let i=0;i<20;i++){
+ const p=document.createElement("a-entity");
+ p.setAttribute("position",`${-45+Math.random()*90} .8 ${-50+Math.random()*90}`);
+ p.dataset.vx=(Math.random()-.5);
+ p.dataset.vz=(Math.random()-.5);
+ p.dataset.targetX=-55+Math.random()*110;
+ p.dataset.targetZ=-50+Math.random()*100;
+ p.dataset.turn=Math.random()*3;
+ p.classList.add("visitor");
+
+ const body=document.createElement("a-cylinder");
+ body.setAttribute("radius",".32");body.setAttribute("height","1.1");
+ body.setAttribute("color",["#e74c3c","#3498db","#f1c40f","#9b59b6","#1abc9c"][i%5]);
+ p.appendChild(body);
+
+ const head=document.createElement("a-sphere");
+ head.setAttribute("position","0 .8 0");
+ head.setAttribute("radius",".28");
+ head.setAttribute("color","#e5b887");
+ p.appendChild(head);
+
+ const hat=document.createElement("a-cylinder");
+ hat.setAttribute("position","0 1.1 0");
+ hat.setAttribute("radius",".35");hat.setAttribute("height",".12");
+ hat.setAttribute("color","#f2f2f2");
+ p.appendChild(hat);
+
+ world.appendChild(p);
+ people.push(p);
+}
+
+/* staff */
+const staff=document.createElement("a-entity");
+staff.setAttribute("position","2 1.0 29");
+const sb=document.createElement("a-cylinder");
+sb.setAttribute("radius",".35");sb.setAttribute("height","1.2");sb.setAttribute("color","#1d5c9a");
+staff.appendChild(sb);
+const sh=document.createElement("a-sphere");
+sh.setAttribute("position","0 .8 0");sh.setAttribute("radius",".28");sh.setAttribute("color","#e3b487");
+staff.appendChild(sh);
+const sl=document.createElement("a-text");
+sl.setAttribute("value","👮 STAFF");
+sl.setAttribute("position","0 1.7 0");
+sl.setAttribute("align","center");sl.setAttribute("color","#fff");
+sl.setAttribute("scale","1.2 1.2 1.2");
+staff.appendChild(sl);
+world.appendChild(staff);
+
+/* =========================
+   MISSION UI
+========================= */
+function missionStatus(){
+ const a=state.discovered;
+ return [
+  a.has("Lion"),
+  a.has("Elephant"),
+  a.has("Giraffe"),
+  a.has("Zebra"),
+  a.has("Monkey"),
+  a.size>=8,
+  state.photoCount>=3,
+  state.fed,
+  state.zones.size>=3,
+  state.staff
+ ];
+}
+
+function updateMissions(){
+ const done=missionStatus();
+ document.querySelector("#missions").textContent=`${done.filter(Boolean).length}/10`;
+ document.querySelector("#missionList").innerHTML=missions.map((m,i)=>
+ `<div class="mi ${done[i]?"done":""}">${done[i]?"✓":"○"} ${m}</div>`
+ ).join("");
+
+ const count=done.filter(Boolean).length;
+ if(count===10 && !state.master){
+  state.master=true;
+  score(25);
+  toastMsg("🏆 ZOO MASTER<br>คุณสำรวจสวนสัตว์ครบแล้ว!",5000);
+ }
+}
+
+function discover(name,zone){
+ if(!state.discovered.has(name)){
+  state.discovered.add(name);
+  score(10);
+  toastMsg(`🐾 DISCOVERED!<br>${name}<br>+10 XP`);
+  soundBeep(700,.12);
+ }
+ state.zones.add(zone);
+ updateMissions();
+ document.querySelector("#animals").textContent=`${state.discovered.size}/8`;
+}
+
+/* =========================
+   INTERACTION
+========================= */
+function nearestAnimal(){
+ let best=null,bd=999;
+ document.querySelectorAll(".animal").forEach(a=>{
+  const d=a.object3D.position.distanceTo(player.object3D.position);
+  if(d<bd){bd=d;best=a}
+ });
+ return bd<=7?best:null;
+}
+
+function facePlayer(a){
+ const p=player.object3D.position;
+ const q=a.object3D.position;
+ a.object3D.rotation.y=Math.atan2(p.x-q.x,p.z-q.z);
+}
+
+function interact(a){
+ if(!a)return;
+ discover(a.dataset.name,a.dataset.zone);
+ facePlayer(a);
+
+ const body=a.children[0];
+ body.setAttribute("animation__react",
+ `property:scale;to:1.9 1.3 1.2;dur:300;dir:alternate;loop:2`);
+
+ toastMsg(`ℹ️ ${a.dataset.name}<br>${a.dataset.zone}<br>🐾 พบแล้ว +10`);
+}
+
+/* =========================
+   FEED
+========================= */
+function feed(){
+ const a=nearestAnimal();
+ if(!a){
+  toastMsg("🍎 เข้าใกล้สัตว์ภายใน 7 เมตรก่อน");
+  return;
+ }
+ const now=performance.now();
+ if(now<state.feedCooldown){
+  toastMsg(`⏳ กรุณารอ ${Math.ceil((state.feedCooldown-now)/1000)} วินาที`);
+  return;
+ }
+
+ state.feedCooldown=now+10000;
+ state.fed=true;
+ discover(a.dataset.name,a.dataset.zone);
+ score(20);
+
+ const food=document.createElement("a-sphere");
+ food.setAttribute("radius",".22");
+ food.setAttribute("color","#ff514f");
+ food.setAttribute("position",`${player.object3D.position.x} 1 ${player.object3D.position.z}`);
+ world.appendChild(food);
+
+ const target=a.object3D.position;
+ food.setAttribute("animation",
+  `property:position;to:${target.x} .9 ${target.z};dur:900;easing:easeInOutQuad`);
+ a.setAttribute("animation__eat",
+  "property:rotation;to:0 360 0;dur:1000;loop:2");
+
+ setTimeout(()=>food.remove(),1200);
+ toastMsg("🍎 Animal Fed!<br>+20 XP");
+ soundBeep(850,.18);
+ updateMissions();
+}
+
+/* =========================
+   PHOTO
+========================= */
+function photo(){
+ const a=nearestAnimal();
+ if(!a){
+  toastMsg("📷 ต้องมีสัตว์อยู่ใกล้ 7 เมตร");
+  return;
+ }
+ discover(a.dataset.name,a.dataset.zone);
+ state.photographed.add(a.dataset.name);
+ state.photoCount++;
+ score(10);
+
+ const f=document.querySelector("#photoFrame");
+ const flash=document.querySelector("#flash");
+ f.style.display="block";
+ flash.style.display="block";
+ setTimeout(()=>flash.style.display="none",130);
+ setTimeout(()=>f.style.display="none",800);
+
+ toastMsg("📷 PHOTO CAPTURED!<br>+10 XP");
+ soundBeep(1000,.1);
+ updateMissions();
+}
+
+/* =========================
+   PLAYER
+========================= */
+AFRAME.registerComponent("zoo-player",{
+ init(){
+  this.keys={};
+  this.velY=0;
+  this.onKey=e=>{
+   this.keys[e.code]=e.type==="keydown";
+   if(e.type==="keydown"){
+    if(e.code==="KeyE")interact(nearestAnimal());
+    if(e.code==="KeyM")toggleSound();
+    if(e.code==="KeyP")togglePause();
+    if(e.code==="KeyR")reset();
+    if(e.code==="KeyF")feed();
+    if(e.code==="KeyO")photo();
+    if(e.code==="Space" && !state.jumping && !state.paused){
+     state.jumping=true;this.velY=5.5;
+    }
+   }
+  };
+  addEventListener("keydown",this.onKey);
+  addEventListener("keyup",this.onKey);
+ },
+ tick(time,dt){
+  if(state.paused)return;
+
+  const k=this.keys;
+  const cam=camera.object3D;
+  const speed=(k.ShiftLeft||k.ShiftRight)?6:2.5;
+  let dx=0,dz=0;
+
+  if(k.KeyW)dz-=1;
+  if(k.KeyS)dz+=1;
+  if(k.KeyA)dx-=1;
+  if(k.KeyD)dx+=1;
+
+  const len=Math.hypot(dx,dz)||1;
+  dx/=len;dz/=len;
+
+  const forward=new THREE.Vector3();
+  cam.getWorldDirection(forward);
+  forward.y=0;forward.normalize();
+
+  const right=new THREE.Vector3()
+    .crossVectors(forward,new THREE.Vector3(0,1,0)).normalize();
+
+  const move=new THREE.Vector3();
+  move.addScaledVector(forward,-dz);
+  move.addScaledVector(right,dx);
+  move.normalize();
+
+  this.el.object3D.position.x+=move.x*speed*dt/1000;
+  this.el.object3D.position.z+=move.z*speed*dt/1000;
+
+  this.el.object3D.position.x=Math.max(-70,Math.min(70,this.el.object3D.position.x));
+  this.el.object3D.position.z=Math.max(-54,Math.min(54,this.el.object3D.position.z));
+
+  if(state.jumping){
+   this.velY-=12*dt/1000;
+   this.el.object3D.position.y+=this.velY*dt/1000;
+   if(this.el.object3D.position.y<=1.7){
+    this.el.object3D.position.y=1.7;
+    this.velY=0;
+    state.jumping=false;
+   }
+  }
+ }
+});
+
+/* =========================
+   ANIMATION LOOP
+========================= */
+let last=performance.now();
+
+function updateAnimals(dt){
+ if(state.paused)return;
+
+ document.querySelectorAll(".animal").forEach(a=>{
+  let p=a.object3D.position;
+  let vx=parseFloat(a.dataset.vx);
+  let vz=parseFloat(a.dataset.vz);
+  let homeX=parseFloat(a.dataset.homeX);
+  let homeZ=parseFloat(a.dataset.homeZ);
+
+  let dist=Math.hypot(
+   player.object3D.position.x-p.x,
+   player.object3D.position.z-p.z
+  );
+
+  if(dist<7){
+   a.dataset.zone && state.zones.add(a.dataset.zone);
+  }
+
+  if(a.dataset.state==="feeding"){
+   return;
+  }
+
+  let sp=state.animalSpeed*.8;
+  p.x+=vx*sp*dt/1000;
+  p.z+=vz*sp*dt/1000;
+
+  if(Math.abs(p.x-homeX)>8)vx=-Math.sign(p.x-homeX);
+  if(Math.abs(p.z-homeZ)>6)vz=-Math.sign(p.z-homeZ);
+
+  a.dataset.vx=vx;
+  a.dataset.vz=vz;
+
+  a.object3D.rotation.y=Math.atan2(vx,vz);
+
+  const bob=Math.sin(performance.now()/180)*.05;
+  p.y=parseFloat(a.dataset.baseY)+bob;
+ });
+}
+
+function updatePeople(dt){
+ if(state.paused||!state.peopleMoving)return;
+
+ people.forEach(p=>{
+  let pos=p.object3D.position;
+  let tx=parseFloat(p.dataset.targetX);
+  let tz=parseFloat(p.dataset.targetZ);
+  let dx=tx-pos.x,dz=tz-pos.z;
+  let d=Math.hypot(dx,dz);
+
+  if(d<2){
+   p.dataset.targetX=-60+Math.random()*120;
+   p.dataset.targetZ=-50+Math.random()*100;
+   return;
+  }
+
+  dx/=d;dz/=d;
+  const s=state.visitorSpeed*.45;
+  pos.x+=dx*s*dt/1000;
+  pos.z+=dz*s*dt/1000;
+
+  pos.x=Math.max(-68,Math.min(68,pos.x));
+  pos.z=Math.max(-52,Math.min(52,pos.z));
+  p.object3D.rotation.y=Math.atan2(dx,dz);
+
+  p.object3D.position.y=.8+Math.abs(Math.sin(performance.now()/130))*0.04;
+ });
+}
+
+/* =========================
+   PROMPT / ZONE DETECTION
+========================= */
+function updatePrompt(){
+ const a=nearestAnimal();
+ if(a && !state.paused){
+  prompt.style.display="block";
+  prompt.innerHTML=`กด <b>E</b> เพื่อโต้ตอบกับ ${a.dataset.name}`;
+ }else{
+  prompt.style.display="none";
+ }
+
+ const p=player.object3D.position;
+ if(Math.abs(p.x)<10 && Math.abs(p.z)<10){
+  state.zones.add("Central");
+ }
+ updateMissions();
+}
+
+/* =========================
+   NIGHT MODE
+========================= */
+function setNight(){
+ state.night=!state.night;
+ const sky=document.querySelector("#sky");
+ const sun=document.querySelector("#sun");
+
+ if(state.night){
+  sky.setAttribute("color","#081535");
+  scene.setAttribute("fog","type:exponential;color:#101a38;density:.018");
+  sun.setAttribute("intensity",".25");
+  document.body.classList.add("night");
+  document.querySelectorAll(".zooLight").forEach(x=>{
+   if(x.hasAttribute("light"))x.setAttribute("light","intensity:1.5");
+   else x.setAttribute("material","color:#ffeaa2;emissive:#ffe47a;emissiveIntensity:1");
+  });
+ }else{
+  sky.setAttribute("color","#8fd8ff");
+  scene.setAttribute("fog","type:exponential;color:#b9e5d0;density:.012");
+  sun.setAttribute("intensity","2.2");
+  document.body.classList.remove("night");
+  document.querySelectorAll(".zooLight").forEach(x=>{
+   if(x.hasAttribute("light"))x.setAttribute("light","intensity:0");
+   else x.setAttribute("material","color:#ffeaa2;emissive:#ffe47a;emissiveIntensity:.8");
+  });
+ }
+ soundBeep(450,.08);
+}
+
+/* =========================
+   LIGHTS
+========================= */
+function toggleLights(){
+ state.lights=!state.lights;
+ document.querySelectorAll(".zooLight").forEach(x=>{
+  if(x.hasAttribute("light"))
+   x.setAttribute("light","intensity",state.lights?(state.night?1.5:0):0);
+ });
+}
+
+/* =========================
+   SOUND
+========================= */
+function toggleSound(){
+ state.sound=!state.sound;
+ document.querySelector("#soundBtn").textContent=state.sound?"🔊 SOUND":"🔇 MUTED";
+ if(state.sound)soundBeep();
+}
+
+/* =========================
+   PAUSE / RESET
+========================= */
+function togglePause(){
+ state.paused=!state.paused;
+ document.querySelector("#pauseBtn").textContent=state.paused?"▶ RESUME":"⏯ PAUSE";
+ toastMsg(state.paused?"⏸ PAUSED":"▶ RESUMED",1000);
+}
+
+function reset(){
+ player.object3D.position.set(0,1.7,18);
+ camera.object3D.rotation.set(0,0,0);
+
+ document.querySelectorAll(".animal").forEach(a=>{
+  a.object3D.position.set(
+   parseFloat(a.dataset.homeX),
+   parseFloat(a.dataset.baseY),
+   parseFloat(a.dataset.homeZ)
+  );
+ });
+
+ toastMsg("🔄 POSITION RESET",1000);
+}
+
+function callStaff(){
+ state.staff=true;
+ score(5);
+ staff.object3D.rotation.y=Math.PI;
+ toastMsg("🚨 STAFF CALLED!<br>เจ้าหน้าที่กำลังเข้ามาช่วย<br>+5 XP");
+ updateMissions();
+}
+
+/* =========================
+   BUTTONS
+========================= */
+document.querySelector("#feedBtn").onclick=feed;
+document.querySelector("#photoBtn").onclick=photo;
+document.querySelector("#soundBtn").onclick=toggleSound;
+document.querySelector("#nightBtn").onclick=setNight;
+document.querySelector("#lightsBtn").onclick=toggleLights;
+document.querySelector("#staffBtn").onclick=callStaff;
+document.querySelector("#pauseBtn").onclick=togglePause;
+document.querySelector("#resetBtn").onclick=reset;
+
+document.querySelector("#stopPeople").onclick=()=>{
+ state.peopleMoving=false;
+ toastMsg("🛑 PEOPLE STOPPED",1000);
+};
+document.querySelector("#resumePeople").onclick=()=>{
+ state.peopleMoving=true;
+ toastMsg("🚶 PEOPLE RESUMED",1000);
+};
+
+document.querySelector("#visitorSpeed").oninput=e=>{
+ state.visitorSpeed=parseFloat(e.target.value);
+ document.querySelector("#vs").textContent=state.visitorSpeed.toFixed(1);
+};
+
+document.querySelector("#animalSpeed").oninput=e=>{
+ state.animalSpeed=parseFloat(e.target.value);
+ document.querySelector("#as").textContent=state.animalSpeed.toFixed(1);
+};
+
+/* =========================
+   MAIN LOOP
+========================= */
+function loop(now){
+ const dt=Math.min(50,now-last);
+ last=now;
+
+ updateAnimals(dt);
+ updatePeople(dt);
+ updatePrompt();
+
+ requestAnimationFrame(loop);
+}
+
+updateMissions();
+requestAnimationFrame(loop);
+
+/* M shortcut */
+addEventListener("keydown",e=>{
+ if(e.code==="KeyN")setNight();
+});
+
+/* ensure audio starts only after interaction */
+scene.addEventListener("loaded",()=>{
+ toastMsg("🦁 WELCOME TO ZOO EXPLORER!<br>คลิกจอเพื่อเริ่มเดิน",3000);
+});
+
+/* prevent browser scrolling */
+addEventListener("keydown",e=>{
+ if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code))
+  e.preventDefault();
+});
+})();
+</script>
+
+</body>
+</html>
